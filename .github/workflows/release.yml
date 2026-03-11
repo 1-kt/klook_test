@@ -1,0 +1,42 @@
+﻿name: Release Package
+
+on:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read manifest
+        id: manifest
+        run: |
+          VERSION=$(jq -r '.version' manifest.json)
+          NAME=$(jq -r '.name' manifest.json | tr ' ' '-' | tr -cd '[:alnum:]_-')
+          if [ -z "$NAME" ]; then NAME="extension"; fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+
+      - name: Build zip
+        run: |
+          ZIP_NAME="${{ steps.manifest.outputs.name }}-v${{ steps.manifest.outputs.version }}.zip"
+          zip -r "$ZIP_NAME" . -x ".git/*" ".github/*"
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v${{ steps.manifest.outputs.version }}
+          name: v${{ steps.manifest.outputs.version }}
+          artifacts: ${{ env.zip_name }}
+          allowUpdates: true
+          replacesArtifacts: true
+          generateReleaseNotes: true
