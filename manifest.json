@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Auto Clicker",
+  "version": "1.0",
+  "description": "自动化点击工具",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
