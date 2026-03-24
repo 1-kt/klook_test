@@ -232,8 +232,8 @@ function executeStep8() {
     const isChecked = document.querySelector('.dynamic-form-checkbox input[type="checkbox"]')?.checked;
     console.log('步骤8 - 复选框是否已勾选:', isChecked);
 
-    // 等待后执行步骤9：点击确认按钮
-    setTimeout(() => executeStep9(), 1000);
+    // 改为提示人工继续，避免自动点击 Go to payment
+    console.log('步骤8 - 已停止自动点击 Go to payment，请人工确认后再继续。');
   }, 500);
 }
 
@@ -481,46 +481,186 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       }
 
-      // 如果没找到，尝试点击"All"展开更多日期
+      // 如果没找到，尝试点击"All"展开日历并切换月份查找
       if (!dateFound) {
-        console.log('步骤2 - 未在默认日期中找到，尝试点击All展开');
+        console.log('步骤2 - 未在默认日期中找到，尝试点击All展开日历');
+        console.log('步骤2 - 所有日期单元格内容:', Array.from(dateCells).map(c => c.textContent.trim()));
+
+        // 尝试多种方式查找日历展开按钮
         let allBtnFound = false;
 
+        // 方法1: 在日期单元格中查找All
         for (let i = 0; i < dateCells.length; i++) {
           const cellText = dateCells[i].textContent.trim();
           if (cellText === 'All' || cellText.includes('All')) {
             dateCells[i].click();
             allBtnFound = true;
-            console.log('步骤2 - 已点击All');
-
-            setTimeout(() => {
-              const calendarDates = document.querySelectorAll('.klk-date-picker-date:not(.klk-date-picker-date-disabled) .klk-date-picker-date-inner');
-              console.log('步骤2 - 日历弹窗中找到的可选日期数量:', calendarDates.length);
-
-              const dateNum = date.match(/\d+/)?.[0] || date;
-              console.log('步骤2 - 查找日期数字:', dateNum);
-
-              let foundInCalendar = false;
-              for (let j = 0; j < calendarDates.length; j++) {
-                const dateText = calendarDates[j].textContent.trim();
-                console.log(`步骤2 - 日历日期${j}内容:`, dateText);
-
-                if (dateText === dateNum || dateText.includes(dateNum)) {
-                  calendarDates[j].click();
-                  foundInCalendar = true;
-                  console.log('步骤2 - 已点击日历中的日期:', date);
-                  setTimeout(() => executeStep3(sendResponse, params), 2000);
-                  break;
-                }
-              }
-
-              if (!foundInCalendar) {
-                console.error('步骤2 - 日历中仍未找到日期:', date);
-                sendResponse({ message: `未找到日期: ${date}，日历中共找到${calendarDates.length}个可选日期`, error: true });
-              }
-            }, 3000);
+            console.log('步骤2 - 已点击All (方法1)');
             break;
           }
+        }
+
+        // 方法2: 查找包含"All"文本的任何元素
+        if (!allBtnFound) {
+          const allElements = document.querySelectorAll('*');
+          for (const el of allElements) {
+            if (el.textContent === 'All' && el.classList.contains('cell')) {
+              el.click();
+              allBtnFound = true;
+              console.log('步骤2 - 已点击All (方法2)');
+              break;
+            }
+          }
+        }
+
+        // 方法3: 直接点击日期输入框展开日历
+        if (!allBtnFound) {
+          const dateInput = document.querySelector('input[placeholder*="date"], input[placeholder*="Date"], .date-picker-input');
+          if (dateInput) {
+            dateInput.click();
+            allBtnFound = true;
+            console.log('步骤2 - 已点击日期输入框展开日历 (方法3)');
+          }
+        }
+
+        if (allBtnFound) {
+
+            // 月份映射表 - 使用缩写形式
+            const monthMap = {
+              'Jan': 'Jan', 'Feb': 'Feb', 'Mar': 'Mar', 'Apr': 'Apr',
+              'May': 'May', 'Jun': 'Jun', 'Jul': 'Jul', 'Aug': 'Aug',
+              'Sep': 'Sep', 'Oct': 'Oct', 'Nov': 'Nov', 'Dec': 'Dec'
+            };
+
+            // 解析目标月份 - 使用缩写
+            let targetMonth = '';
+            for (const [abbr, full] of Object.entries(monthMap)) {
+              if (date.includes(abbr) || date.includes(full)) {
+                targetMonth = abbr;
+                break;
+              }
+            }
+            console.log('步骤2 - 目标月份(缩写):', targetMonth);
+            console.log('步骤2 - 输入日期:', date);
+
+            setTimeout(() => {
+              // 切换到目标月份并查找日期
+              const switchMonthAndFindDate = (attemptCount = 0) => {
+                const maxAttempts = 24; // 最多切换24个月（防止死循环）
+
+                console.log(`步骤2 - ===== switchMonthAndFindDate 调用 (第${attemptCount + 1}次) =====`);
+
+                // 获取当前日历显示的月份 - 修正选择器
+                const calendarHeader = document.querySelector('.klk-date-picker-panel-header-title');
+                const currentMonth = calendarHeader ? calendarHeader.textContent.trim() : '';
+                console.log(`步骤2 - 当前日历月份: "${currentMonth}", 目标月份: "${targetMonth}"`);
+                console.log(`步骤2 - 月份匹配: "${currentMonth}".includes("${targetMonth}") = ${currentMonth.includes(targetMonth)}`);
+
+                // 检查是否已是目标月份
+                if (currentMonth.includes(targetMonth)) {
+                  console.log('步骤2 - ✅ 月份匹配成功！不再切换，开始查找日期');
+
+                  // 等待日历渲染完成后再查找日期
+                  setTimeout(() => {
+                    const dateNum = date.match(/\d+/)?.[0] || date;
+                    console.log('步骤2 - 目标日期数字:', dateNum);
+
+                    // 尝试多种方式查找日期元素
+                    let calendarDates = document.querySelectorAll('.klk-date-picker-date:not(.klk-date-picker-date-disabled) .klk-date-picker-date-inner');
+                    console.log('步骤2 - 日历中的可选日期数量(方式1):', calendarDates.length);
+
+                    // 如果方式1找不到，尝试方式2
+                    if (calendarDates.length === 0) {
+                      calendarDates = document.querySelectorAll('.klk-date-picker-date:not(.klk-date-picker-date-disabled)');
+                      console.log('步骤2 - 日历中的可选日期数量(方式2):', calendarDates.length);
+                    }
+
+                    // 打印所有日期用于调试
+                    if (calendarDates.length > 0) {
+                      console.log('步骤2 - 所有可选日期:', Array.from(calendarDates).map(d => d.textContent.trim()));
+                    } else {
+                      console.error('步骤2 - 日历中没有可选日期！');
+                      sendResponse({ message: `日历中没有可选日期`, error: true });
+                      return;
+                    }
+
+                    let foundInCalendar = false;
+                    for (let j = 0; j < calendarDates.length; j++) {
+                      const dateText = calendarDates[j].textContent.trim();
+                      console.log(`步骤2 - 检查日期${j}: "${dateText}" vs "${dateNum}"`);
+                      // 精确匹配或包含匹配
+                      if (dateText === dateNum || dateText.includes(dateNum) || dateNum.includes(dateText)) {
+                        console.log('步骤2 - 找到匹配日期，准备点击');
+                        // 尝试点击可点击的父元素
+                        const clickableParent = calendarDates[j].closest('.klk-date-picker-date') || calendarDates[j];
+                        clickableParent.click();
+                        foundInCalendar = true;
+                        console.log('步骤2 - ✅✅✅ 已点击日历中的日期:', date, '，2秒后执行步骤3');
+                        setTimeout(() => {
+                          console.log('步骤2 - ===== 延迟结束，调用 executeStep3 =====');
+                          executeStep3(sendResponse, params);
+                        }, 2000);
+                        break;
+                      }
+                    }
+
+                    if (!foundInCalendar) {
+                      console.error('步骤2 - ❌ 在目标月份中未找到日期:', dateNum);
+                      sendResponse({ message: `在${targetMonth}中未找到日期: ${dateNum}，可选日期: ${Array.from(calendarDates).map(d => d.textContent.trim()).join(', ')}`, error: true });
+                    }
+                  }, 500); // 等待500ms让日历完全渲染
+                  return;
+                }
+
+                console.log('步骤2 - ❌ 月份不匹配，准备点击下个月按钮继续切换');
+
+                // 如果超过最大尝试次数，报错
+                if (attemptCount >= maxAttempts) {
+                  console.error('步骤2 - 月份切换超过最大尝试次数:', maxAttempts);
+                  sendResponse({ message: `未找到目标月份: ${targetMonth}，已尝试${maxAttempts}次切换`, error: true });
+                  return;
+                }
+
+                // 点击下个月按钮 - 尝试多种查找方式
+                let nextMonthBtn = document.querySelector('.klk-date-picker-next-btn');
+                if (!nextMonthBtn) {
+                  nextMonthBtn = document.querySelector('.i-icon-icon-next');
+                }
+                if (!nextMonthBtn) {
+                  // 尝试查找所有可能的下月按钮
+                  const allNextBtns = document.querySelectorAll('span[class*="next"]');
+                  console.log('步骤2 - 尝试查找所有包含next的span:', allNextBtns.length);
+                  for (const btn of allNextBtns) {
+                    console.log('步骤2 - 找到next按钮:', btn.className);
+                  }
+                }
+
+                console.log('步骤2 - 下个月按钮查找结果:', !!nextMonthBtn, nextMonthBtn ? nextMonthBtn.className : 'N/A');
+
+                if (nextMonthBtn) {
+                  console.log(`步骤2 - 点击下个月按钮 (第${attemptCount + 1}次切换)`);
+                  nextMonthBtn.click();
+
+                  // 等待动画完成后继续
+                  setTimeout(() => {
+                    console.log(`步骤2 - 800ms等待结束，准备下次调用`);
+                    switchMonthAndFindDate(attemptCount + 1);
+                  }, 800);
+                } else {
+                  console.error('步骤2 - 未找到下个月按钮');
+                  // 打印日历容器信息用于调试
+                  const picker = document.querySelector('.klk-date-picker');
+                  console.log('步骤2 - 日历容器存在:', !!picker);
+                  if (picker) {
+                    console.log('步骤2 - 日历HTML:', picker.innerHTML.substring(0, 500));
+                  }
+                  sendResponse({ message: '未找到月份切换按钮', error: true });
+                }
+              };
+
+              // 开始切换月份
+              switchMonthAndFindDate();
+            }, 3000);
         }
 
         if (!allBtnFound) {
