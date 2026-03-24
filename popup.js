@@ -1,16 +1,54 @@
+// 月份映射：数字月份 → 缩写
+const monthMap = {
+  '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr',
+  '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Aug',
+  '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
+};
+
+// 转换日期格式：2026-04-05 → Apr 5
+function convertDate(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const month = monthMap[parts[1]] || parts[1];
+    const day = parseInt(parts[2], 10);
+    return `${month} ${day}`;
+  }
+  return dateStr;
+}
+
 document.getElementById('runBtn').addEventListener('click', async () => {
   const status = document.getElementById('status');
   const jsonInput = document.getElementById('jsonInput').value;
-  const travellersInput = document.getElementById('travellersInput').value;
-  const contactInput = document.getElementById('contactInput').value;
 
   try {
-    const params = JSON.parse(jsonInput || '{}');
-    const travellers = JSON.parse(travellersInput || '[]');
-    const contact = JSON.parse(contactInput || '{}');
+    const input = JSON.parse(jsonInput || '{}');
+    console.log('输入的原始数据:', input);
 
-    // 合并参数
-    const mergedParams = { ...params, travellers, contact };
+    // 字段映射和转换
+    const params = {
+      // 日期转换：travel_date (2026-04-05) → date (Apr 5)
+      date: convertDate(input.travel_date) || input.date || '',
+
+      // 时间：time_slot → time
+      time: input.time_slot || input.time || '10:00',
+
+      // 人数：pax 或 pax_detail.Adult → adults
+      adults: input.pax || input.pax_detail?.Adult || input.adults || 1,
+
+      // 参与者信息：暂时用空数组，后续可以从订单中提取或手动添加
+      travellers: input.travellers || [],
+
+      // 联系信息：字段映射
+      contact: {
+        firstName: input.contact_first_name || input.contact?.firstName || '',
+        lastName: input.contact_last_name || input.contact?.lastName || '',
+        phone: input.contact_mobile || input.contact_phone || input.contact?.phone || '',
+        email: input.contact_email || input.contact?.email || ''
+      }
+    };
+
+    console.log('转换后的参数:', params);
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -21,10 +59,10 @@ document.getElementById('runBtn').addEventListener('click', async () => {
       return;
     }
 
-    console.log('发送消息到tab:', tab.id, '参数:', mergedParams);
+    console.log('发送消息到tab:', tab.id, '参数:', params);
 
     // 先尝试发送消息，如果失败则注入 content script
-    chrome.tabs.sendMessage(tab.id, { action: 'execute', params: mergedParams }, (response) => {
+    chrome.tabs.sendMessage(tab.id, { action: 'execute', params: params }, (response) => {
       if (chrome.runtime.lastError) {
         // Content script 未加载，尝试注入
         console.log('Content script 未加载，尝试注入...');
@@ -40,7 +78,7 @@ document.getElementById('runBtn').addEventListener('click', async () => {
             // 注入成功，重新发送消息
             console.log('注入成功，重新发送消息...');
             setTimeout(() => {
-              chrome.tabs.sendMessage(tab.id, { action: 'execute', params: mergedParams }, (resp) => {
+              chrome.tabs.sendMessage(tab.id, { action: 'execute', params: params }, (resp) => {
                 if (chrome.runtime.lastError) {
                   console.error('消息发送失败:', chrome.runtime.lastError.message);
                   status.textContent = '错误: ' + chrome.runtime.lastError.message;
